@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "local.watts",
+  "name": "Power draw",
+  "version": "1.0.0",
+  "author": "kenwi",
+  "description": "Live battery power draw in watts, sampled from sysfs every 5s",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Power draw (W)",
+    "description": "Live battery power draw in watts with charge state icon and tooltip",
+    "category": "Power",
+    "allowMultiple": false
+  }
+}
