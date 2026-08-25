@@ -27,6 +27,9 @@ BarWidget {
   visible: capacity >= 0 && !vertical && widgetEnabled
   implicitWidth: visible ? labelText.implicitWidth + Style.spacing.controlPaddingX * 2 : 0
   implicitHeight: barSize
+  readonly property bool tooltipHovered: visible && mouseArea.containsMouse
+
+  onVisibleChanged: if (!visible && root.bar) root.bar.hideTooltip(root)
 
   Timer {
     interval: 5000
@@ -67,6 +70,7 @@ BarWidget {
   }
 
   MouseArea {
+    id: mouseArea
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
