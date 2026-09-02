@@ -11,12 +11,18 @@ BarWidget {
   property string status: ""
   property int capacity: -1
   property real watts: 0
+  property string timeRemaining: ""
 
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
   // Plain unicode arrows keep predictable text metrics in any font.
   readonly property string arrow: charging ? "↑" : (discharging ? "↓" : "")
   readonly property string label: arrow + (arrow !== "" ? " " : "") + watts.toFixed(1) + " W"
+  readonly property string tooltipText: {
+    var parts = [root.status, root.capacity + "%", root.watts.toFixed(2) + " W"]
+    if (root.timeRemaining !== "") parts.push(root.timeRemaining)
+    return parts.join(" • ")
+  }
 
   // Toggle with: omarchy bar set local.watts enabled false   (or true)
   readonly property bool widgetEnabled: {
@@ -28,6 +34,38 @@ BarWidget {
   implicitWidth: visible ? labelText.implicitWidth + Style.spacing.controlPaddingX * 2 : 0
   implicitHeight: barSize
   readonly property bool tooltipHovered: visible && mouseArea.containsMouse
+
+  function formatDuration(hours) {
+    if (!(hours > 0) || !isFinite(hours)) return ""
+    var totalMinutes = Math.round(hours * 60)
+    var h = Math.floor(totalMinutes / 60)
+    var m = totalMinutes % 60
+    if (h > 0) return h + "h " + m + "m"
+    return Math.max(1, m) + "m"
+  }
+
+  // energy_* is µWh, power_now is µW → hours = energy / power
+  function estimateTimeRemaining(statusText, energyNow, energyFull, powerNow) {
+    if (!(powerNow > 0)) return ""
+    var hours = 0
+    var suffix = ""
+    if (statusText === "Discharging") {
+      hours = energyNow / powerNow
+      suffix = " remaining"
+    } else if (statusText === "Charging") {
+      hours = (energyFull - energyNow) / powerNow
+      suffix = " until full"
+    } else {
+      return ""
+    }
+    var formatted = formatDuration(hours)
+    return formatted !== "" ? formatted + suffix : ""
+  }
+
+  function refreshTooltip() {
+    if (root.tooltipHovered && root.bar)
+      root.bar.showTooltip(root, root.tooltipText)
+  }
 
   onVisibleChanged: if (!visible && root.bar) root.bar.hideTooltip(root)
 
@@ -41,15 +79,21 @@ BarWidget {
 
   Process {
     id: probe
-    command: ["sh", "-c", "cat /sys/class/power_supply/BAT0/status /sys/class/power_supply/BAT0/capacity /sys/class/power_supply/BAT0/power_now 2>/dev/null"]
+    command: ["sh", "-c", "cat /sys/class/power_supply/BAT0/status /sys/class/power_supply/BAT0/capacity /sys/class/power_supply/BAT0/power_now /sys/class/power_supply/BAT0/energy_now /sys/class/power_supply/BAT0/energy_full 2>/dev/null"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         var lines = String(text || "").trim().split("\n")
-        if (lines.length < 3 || lines[1] === "") return
-        root.status = lines[0].trim()
+        if (lines.length < 5 || lines[1] === "") return
+        var statusText = lines[0].trim()
+        var energyNow = parseInt(lines[3])
+        var energyFull = parseInt(lines[4])
+        var powerNow = parseInt(lines[2])
+        root.status = statusText
         root.capacity = parseInt(lines[1])
-        root.watts = parseInt(lines[2]) / 1000000
+        root.watts = powerNow / 1000000
+        root.timeRemaining = root.estimateTimeRemaining(statusText, energyNow, energyFull, powerNow)
+        root.refreshTooltip()
       }
     }
   }
@@ -78,7 +122,7 @@ BarWidget {
     onClicked: function(mouse) {
       if (mouse.button === Qt.LeftButton) probe.running = true
     }
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.status + " • " + root.capacity + "% • " + root.watts.toFixed(2) + " W")
+    onEntered: if (root.bar) root.bar.showTooltip(root, root.tooltipText)
     onExited: if (root.bar) root.bar.hideTooltip(root)
   }
 }
