@@ -12,6 +12,9 @@ BarWidget {
   property int capacity: -1
   property real watts: 0
   property string timeRemaining: ""
+  // Own popup: bar.showTooltip() always clears + delays, and the third-party
+  // facade has no way to update text in place.
+  property bool tipShown: false
 
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
@@ -31,7 +34,9 @@ BarWidget {
   }
 
   visible: capacity >= 0 && !vertical && widgetEnabled
-  implicitWidth: visible ? labelText.implicitWidth + Style.spacing.controlPaddingX * 2 : 0
+  // Floor width to a wide sample label so digit changes do not shrink the
+  // MouseArea and fire a leave/enter cycle.
+  implicitWidth: visible ? Math.max(labelText.implicitWidth, widthProbe.implicitWidth) + Style.spacing.controlPaddingX * 2 : 0
   implicitHeight: barSize
   readonly property bool tooltipHovered: visible && mouseArea.containsMouse
 
@@ -62,12 +67,47 @@ BarWidget {
     return formatted !== "" ? formatted + suffix : ""
   }
 
-  function refreshTooltip() {
-    if (root.tooltipHovered && root.bar)
-      root.bar.showTooltip(root, root.tooltipText)
+  function armTooltip() {
+    hideTipTimer.stop()
+    if (root.tooltipText === "") return
+    if (root.tipShown) return
+    showTipTimer.restart()
   }
 
-  onVisibleChanged: if (!visible && root.bar) root.bar.hideTooltip(root)
+  function scheduleHideTooltip() {
+    showTipTimer.stop()
+    hideTipTimer.restart()
+  }
+
+  function closeTooltip() {
+    showTipTimer.stop()
+    hideTipTimer.stop()
+    root.tipShown = false
+  }
+
+  onVisibleChanged: if (!visible) root.closeTooltip()
+  onTooltipTextChanged: {
+    // Keep an open tip alive when text clears briefly; close only on leave.
+    if (root.tipShown && root.tooltipText === "") root.tipShown = false
+  }
+
+  Timer {
+    id: showTipTimer
+    interval: 400
+    onTriggered: {
+      if (root.tooltipHovered && root.tooltipText !== "")
+        root.tipShown = true
+    }
+  }
+
+  Timer {
+    id: hideTipTimer
+    interval: 120
+    onTriggered: {
+      if (root.tooltipHovered) return
+      root.tipShown = false
+    }
+  }
 
   Timer {
     interval: 5000
@@ -93,7 +133,6 @@ BarWidget {
         root.capacity = parseInt(lines[1])
         root.watts = powerNow / 1000000
         root.timeRemaining = root.estimateTimeRemaining(statusText, energyNow, energyFull, powerNow)
-        root.refreshTooltip()
       }
     }
   }
@@ -102,6 +141,14 @@ BarWidget {
     anchors.fill: parent
     anchors.leftMargin: Style.space(8)
     anchors.rightMargin: Style.space(8)
+
+    Text {
+      id: widthProbe
+      visible: false
+      text: "↓ 99.9 W"
+      font.family: labelText.font.family
+      font.pixelSize: labelText.font.pixelSize
+    }
 
     Text {
       id: labelText
@@ -122,8 +169,71 @@ BarWidget {
     onClicked: function(mouse) {
       if (mouse.button === Qt.LeftButton) probe.running = true
     }
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.tooltipText)
-    onExited: if (root.bar) root.bar.hideTooltip(root)
+    onEntered: root.armTooltip()
+    onExited: root.scheduleHideTooltip()
+  }
+
+  PopupWindow {
+    id: tipWindow
+    visible: root.tipShown && root.tooltipText !== ""
+    color: "transparent"
+    implicitWidth: Math.ceil(tipBubble.implicitWidth)
+    implicitHeight: Math.ceil(tipBubble.implicitHeight)
+
+    anchor {
+      id: tipAnchor
+      window: root.QsWindow ? root.QsWindow.window : null
+      adjustment: PopupAdjustment.Slide
+      edges: Edges.Top | Edges.Left
+      gravity: Edges.Bottom | Edges.Right
+      rect.width: 1
+      rect.height: 1
+
+      onAnchoring: {
+        var win = root.QsWindow ? root.QsWindow.window : null
+        if (!win) return
+
+        var popupWidth = tipWindow.implicitWidth
+        var popupHeight = tipWindow.implicitHeight
+        var localX = root.width / 2 - popupWidth / 2
+        var localY = root.height + 6
+        var pos = root.bar ? root.bar.position : "top"
+
+        if (pos === "bottom") {
+          localY = -popupHeight - 6
+        } else if (pos === "left") {
+          localX = root.width + 6
+          localY = root.height / 2 - popupHeight / 2
+        } else if (pos === "right") {
+          localX = -popupWidth - 6
+          localY = root.height / 2 - popupHeight / 2
+        }
+
+        var point = win.contentItem.mapFromItem(root, localX, localY)
+        tipAnchor.rect.x = Math.round(point.x)
+        tipAnchor.rect.y = Math.round(point.y)
+      }
+    }
+
+    BorderSurface {
+      id: tipBubble
+      implicitWidth: tipLabel.implicitWidth + 20
+      implicitHeight: tipLabel.implicitHeight + 14
+      color: Color.tooltip.background
+      borderSpec: Border.surfaceSpec("tooltip", "border", Color.tooltip.border, 1)
+      radius: Style.cornerRadius
+
+      Text {
+        id: tipLabel
+        textFormat: Text.PlainText
+        anchors.centerIn: parent
+        text: root.tooltipText
+        color: Color.tooltip.text
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.body
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+      }
+    }
   }
 }
-
