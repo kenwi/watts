@@ -11,16 +11,37 @@ BarWidget {
   property string status: ""
   property int capacity: -1
   property real watts: 0
-  property string timeRemaining: ""
+  property string timeShort: ""
   // Own popup: bar.showTooltip() always clears + delays, and the third-party
   // facade has no way to update text in place.
   property bool tipShown: false
+
+  readonly property var displayModes: ["watts", "time", "full"]
+  // Persisted via shell.json layout entry: omarchy bar set local.watts display time
+  readonly property string displayMode: {
+    var v = String(setting("display", "watts"))
+    return (v === "time" || v === "full") ? v : "watts"
+  }
 
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
   // Plain unicode arrows keep predictable text metrics in any font.
   readonly property string arrow: charging ? "↑" : (discharging ? "↓" : "")
-  readonly property string label: arrow + (arrow !== "" ? " " : "") + watts.toFixed(1) + " W"
+  readonly property string wattsPart: arrow + (arrow !== "" ? " " : "") + watts.toFixed(1) + " W"
+  readonly property string timeRemaining: {
+    if (timeShort === "") return ""
+    if (charging) return timeShort + " until full"
+    if (discharging) return timeShort + " remaining"
+    return timeShort
+  }
+  readonly property string label: {
+    var parts = [root.wattsPart]
+    if (root.displayMode === "full" && root.capacity >= 0)
+      parts.push(root.capacity + "%")
+    if ((root.displayMode === "time" || root.displayMode === "full") && root.timeShort !== "")
+      parts.push(root.timeShort)
+    return parts.join(" · ")
+  }
   readonly property string tooltipText: {
     var parts = [root.status, root.capacity + "%", root.watts.toFixed(2) + " W"]
     if (root.timeRemaining !== "") parts.push(root.timeRemaining)
@@ -34,9 +55,7 @@ BarWidget {
   }
 
   visible: capacity >= 0 && !vertical && widgetEnabled
-  // Floor width to a wide sample label so digit changes do not shrink the
-  // MouseArea and fire a leave/enter cycle.
-  implicitWidth: visible ? Math.max(labelText.implicitWidth, widthProbe.implicitWidth) + Style.spacing.controlPaddingX * 2 : 0
+  implicitWidth: visible ? labelText.implicitWidth + Style.space(8) * 2 : 0
   implicitHeight: barSize
   readonly property bool tooltipHovered: visible && mouseArea.containsMouse
 
@@ -50,21 +69,26 @@ BarWidget {
   }
 
   // energy_* is µWh, power_now is µW → hours = energy / power
-  function estimateTimeRemaining(statusText, energyNow, energyFull, powerNow) {
+  function estimateTimeShort(statusText, energyNow, energyFull, powerNow) {
     if (!(powerNow > 0)) return ""
     var hours = 0
-    var suffix = ""
-    if (statusText === "Discharging") {
-      hours = energyNow / powerNow
-      suffix = " remaining"
-    } else if (statusText === "Charging") {
-      hours = (energyFull - energyNow) / powerNow
-      suffix = " until full"
-    } else {
-      return ""
-    }
-    var formatted = formatDuration(hours)
-    return formatted !== "" ? formatted + suffix : ""
+    if (statusText === "Discharging") hours = energyNow / powerNow
+    else if (statusText === "Charging") hours = (energyFull - energyNow) / powerNow
+    else return ""
+    return formatDuration(hours)
+  }
+
+  function cycleDisplay() {
+    var modes = root.displayModes
+    var idx = modes.indexOf(root.displayMode)
+    var next = modes[(idx < 0 ? 0 : idx + 1) % modes.length]
+    var entry = { id: root.moduleName }
+    for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
+    entry.display = next
+    // Applied locally first so the label changes on the click itself.
+    root.settings = entry
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
   function armTooltip() {
@@ -132,7 +156,7 @@ BarWidget {
         root.status = statusText
         root.capacity = parseInt(lines[1])
         root.watts = powerNow / 1000000
-        root.timeRemaining = root.estimateTimeRemaining(statusText, energyNow, energyFull, powerNow)
+        root.timeShort = root.estimateTimeShort(statusText, energyNow, energyFull, powerNow)
       }
     }
   }
@@ -143,16 +167,9 @@ BarWidget {
     anchors.rightMargin: Style.space(8)
 
     Text {
-      id: widthProbe
-      visible: false
-      text: "↓ 99.9 W"
-      font.family: labelText.font.family
-      font.pixelSize: labelText.font.pixelSize
-    }
-
-    Text {
       id: labelText
-      anchors.centerIn: parent
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
       text: root.label
       color: root.bar ? root.bar.barForeground : Color.foreground
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
@@ -167,7 +184,10 @@ BarWidget {
     cursorShape: Qt.PointingHandCursor
 
     onClicked: function(mouse) {
-      if (mouse.button === Qt.LeftButton) probe.running = true
+      if (mouse.button === Qt.LeftButton) {
+        root.cycleDisplay()
+        probe.running = true
+      }
     }
     onEntered: root.armTooltip()
     onExited: root.scheduleHideTooltip()
