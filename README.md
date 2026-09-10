@@ -10,7 +10,7 @@ tooltip with the full detail.
 
 - Live power draw label (`↑ 12.3 W` charging, `↓ 8.1 W` discharging)
 - Click opens a metrics menu: enable/disable each field and drag to reorder
-- Available bar metrics: Watts, Battery %, Time remaining
+- Available bar metrics: Charge arrow, Watts, Battery %, Time remaining
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
 - Tooltip stays open while hovering and updates live with each sample
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
@@ -26,10 +26,11 @@ Examples:
 
 | Configuration | Bar label |
 |---------------|-----------|
-| Watts only | `↓ 8.1 W` |
-| Watts, then % | `↓ 8.1 W · 60%` |
-| %, then watts | `60% · ↓ 8.1 W` |
-| Watts, %, time | `↓ 8.1 W · 60% · 1h 12m` |
+| Arrow + watts | `↓ 8.1 W` |
+| Watts only | `8.1 W` |
+| Arrow, watts, % | `↓ 8.1 W · 60%` |
+| %, then watts | `60% · 8.1 W` |
+| Full | `↓ 8.1 W · 60% · 1h 12m` |
 
 Settings are persisted in `shell.json` as a plain string (so they survive
 plugin reloads after Omarchy updates):
@@ -37,15 +38,16 @@ plugin reloads after Omarchy updates):
 ```json
 {
   "id": "local.watts",
-  "metrics": "watts:on,capacity:on,time:off"
+  "metrics": "arrow:on,watts:on,capacity:on,time:off"
 }
 ```
 
-Metric ids: `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
-Order in the string is the bar order.
+Metric ids: `arrow`, `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
+Order in the string is the bar order. The charge arrow joins its neighbor with a
+space (`↓ 8.1 W`); other metrics use ` · `.
 
-Older nested-array `metrics` values and the previous `display` setting
-(`watts` / `time` / `full`) still migrate automatically.
+Older configs without `arrow`, nested-array `metrics`, and the previous `display`
+setting (`watts` / `time` / `full`) still migrate automatically.
 
 Time is estimated from `energy_now` / `power_now` while discharging, or
 remaining capacity to full while charging. It is omitted from the bar when

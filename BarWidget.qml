@@ -23,7 +23,7 @@ BarWidget {
   readonly property bool discharging: status === "Discharging"
   // Plain unicode arrows keep predictable text metrics in any font.
   readonly property string arrow: charging ? "↑" : (discharging ? "↓" : "")
-  readonly property string wattsPart: arrow + (arrow !== "" ? " " : "") + watts.toFixed(1) + " W"
+  readonly property string wattsPart: watts.toFixed(1) + " W"
   readonly property string timeRemaining: {
     if (timeShort === "") return ""
     if (charging) return timeShort + " until full"
@@ -31,6 +31,7 @@ BarWidget {
     return timeShort
   }
   readonly property string label: Model.formatLabel(root.metrics, {
+    arrow: root.arrow,
     wattsPart: root.wattsPart,
     capacity: root.capacity,
     timeShort: root.timeShort
@@ -77,14 +78,15 @@ BarWidget {
       root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
-  // One-shot migration: rewrite nested-array metrics to the string form.
+  // Rewrite shell.json when normalize expands the catalog (e.g. adds arrow).
   property bool metricsMigrated: false
   function ensureMetricsPersisted() {
     if (root.metricsMigrated) return
     root.metricsMigrated = true
     var raw = setting("metrics", null)
+    var serialized = Model.serializeMetrics(root.metrics)
+    if (typeof raw === "string" && raw === serialized) return
     if (raw === null || raw === undefined) return
-    if (typeof raw === "string" && raw.indexOf(":") !== -1) return
     root.persistMetrics(root.metrics)
   }
 

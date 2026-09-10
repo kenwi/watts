@@ -6,7 +6,8 @@
 // widget fall back to watts-only after an Omarchy update/rescan.
 
 var METRIC_DEFS = [
-  { id: "watts", label: "Watts", description: "Power draw with charge arrow" },
+  { id: "arrow", label: "Charge arrow", description: "↑ charging / ↓ discharging" },
+  { id: "watts", label: "Watts", description: "Power draw in watts" },
   { id: "capacity", label: "Battery %", description: "Charge percentage" },
   { id: "time", label: "Time remaining", description: "Estimate to empty or full" }
 ]
@@ -20,6 +21,7 @@ function metricDef(id) {
 
 function defaultMetrics() {
   return [
+    { id: "arrow", enabled: true },
     { id: "watts", enabled: true },
     { id: "capacity", enabled: false },
     { id: "time", enabled: false }
@@ -31,6 +33,7 @@ function metricsFromDisplay(display) {
   var mode = String(display || "watts")
   if (mode === "full") {
     return [
+      { id: "arrow", enabled: true },
       { id: "watts", enabled: true },
       { id: "capacity", enabled: true },
       { id: "time", enabled: true }
@@ -38,6 +41,7 @@ function metricsFromDisplay(display) {
   }
   if (mode === "time") {
     return [
+      { id: "arrow", enabled: true },
       { id: "watts", enabled: true },
       { id: "capacity", enabled: false },
       { id: "time", enabled: true }
@@ -71,7 +75,7 @@ function asList(value) {
   return null
 }
 
-// Stable shell.json form: "watts:on,capacity:on,time:off"
+// Stable shell.json form: "arrow:on,watts:on,capacity:off,time:off"
 function serializeMetrics(metrics) {
   var parts = []
   var list = asList(metrics) || []
@@ -119,6 +123,19 @@ function parseMetricsString(raw) {
   return finalizeMetrics(rows)
 }
 
+function insertMissingArrow(out, seen) {
+  if (seen["arrow"]) return
+  // Older configs baked the arrow into watts; keep it on and before watts.
+  var wattsIdx = -1
+  for (var j = 0; j < out.length; j++) {
+    if (out[j].id === "watts") { wattsIdx = j; break }
+  }
+  var arrowRow = { id: "arrow", enabled: true }
+  if (wattsIdx >= 0) out.splice(wattsIdx, 0, arrowRow)
+  else out.unshift(arrowRow)
+  seen["arrow"] = true
+}
+
 function finalizeMetrics(rows) {
   var seen = ({})
   var out = []
@@ -128,6 +145,7 @@ function finalizeMetrics(rows) {
     seen[id] = true
     out.push({ id: id, enabled: !!rows[i].enabled })
   }
+  insertMissingArrow(out, seen)
   for (var d = 0; d < METRIC_DEFS.length; d++) {
     var defId = METRIC_DEFS[d].id
     if (!seen[defId]) out.push({ id: defId, enabled: false })
@@ -214,6 +232,7 @@ function moveMetric(metrics, id, delta) {
 }
 
 function formatMetricValue(id, values) {
+  if (id === "arrow") return values.arrow || ""
   if (id === "watts") return values.wattsPart || ""
   if (id === "capacity") {
     if (!(values.capacity >= 0)) return ""
@@ -225,10 +244,20 @@ function formatMetricValue(id, values) {
 
 function formatLabel(metrics, values) {
   var parts = []
+  var ids = []
   for (var i = 0; i < metrics.length; i++) {
     if (!metrics[i].enabled) continue
     var part = formatMetricValue(metrics[i].id, values)
-    if (part !== "") parts.push(part)
+    if (part === "") continue
+    parts.push(part)
+    ids.push(metrics[i].id)
   }
-  return parts.join(" · ")
+  if (parts.length === 0) return ""
+  // Keep arrow glued to its neighbor with a space ("↓ 8.1 W"), not a dot.
+  var out = parts[0]
+  for (var j = 1; j < parts.length; j++) {
+    var sep = (ids[j] === "arrow" || ids[j - 1] === "arrow") ? " " : " · "
+    out += sep + parts[j]
+  }
+  return out
 }
