@@ -19,8 +19,20 @@ BarWidget {
   property bool menuOpen: false
 
   readonly property var metrics: Model.normalizeMetrics(setting("metrics", null), setting("display", "watts"))
+  // Hide metrics when battery is idle/full (only show while charging or discharging).
+  readonly property bool activeOnly: Model.isEnabledFlag(setting("activeOnly", false))
+  // When activeOnly hides metrics, optionally keep a clickable battery icon.
+  readonly property bool idleIconEnabled: {
+    var v = setting("idleIcon", "on")
+    if (v === false || v === "false" || v === "off" || v === 0 || v === "0") return false
+    return true
+  }
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
+  readonly property bool powerActive: charging || discharging
+  readonly property bool showIdleGlyph: activeOnly && !powerActive && idleIconEnabled
+  // Matches Omarchy's battery notification glyph; stays clickable for the menu.
+  readonly property string idleGlyph: "󰁹"
   // Plain unicode arrows keep predictable text metrics in any font.
   readonly property string arrow: charging ? "↑" : (discharging ? "↓" : "")
   readonly property string wattsPart: watts.toFixed(1) + " W"
@@ -30,12 +42,14 @@ BarWidget {
     if (discharging) return timeShort + " remaining"
     return timeShort
   }
-  readonly property string label: Model.formatLabel(root.metrics, {
-    arrow: root.arrow,
-    wattsPart: root.wattsPart,
-    capacity: root.capacity,
-    timeShort: root.timeShort
-  })
+  readonly property string label: root.showIdleGlyph
+    ? root.idleGlyph
+    : Model.formatLabel(root.metrics, {
+        arrow: root.arrow,
+        wattsPart: root.wattsPart,
+        capacity: root.capacity,
+        timeShort: root.timeShort
+      })
   readonly property string tooltipText: {
     var parts = [root.status, root.capacity + "%", root.watts.toFixed(2) + " W"]
     if (root.timeRemaining !== "") parts.push(root.timeRemaining)
@@ -51,6 +65,7 @@ BarWidget {
   }
 
   visible: capacity >= 0 && !vertical && widgetEnabled
+    && (!activeOnly || powerActive || idleIconEnabled || menuOpen)
   implicitWidth: visible ? Math.max(12, labelText.implicitWidth) + Style.space(8) * 2 : 0
   implicitHeight: barSize
   // Bar open-panel underline defaults to ~55% of the slot; span the full widget.
@@ -65,17 +80,29 @@ BarWidget {
     root.close()
   }
 
-  function persistMetrics(nextMetrics) {
+  function persistSettings(patch) {
     var entry = { id: root.moduleName }
     for (var key in root.settings) {
       if (key === "id" || key === "display") continue
       entry[key] = root.settings[key]
     }
-    // Plain string survives QML plugin reload; nested arrays may not.
-    entry.metrics = Model.serializeMetrics(nextMetrics)
+    for (var p in patch) entry[p] = patch[p]
     root.settings = entry
     if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
       root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
+  function persistMetrics(nextMetrics) {
+    // Plain string survives QML plugin reload; nested arrays may not.
+    root.persistSettings({ metrics: Model.serializeMetrics(nextMetrics) })
+  }
+
+  function setActiveOnly(enabled) {
+    root.persistSettings({ activeOnly: enabled ? "on" : "off" })
+  }
+
+  function setIdleIcon(enabled) {
+    root.persistSettings({ idleIcon: enabled ? "on" : "off" })
   }
 
   // Rewrite shell.json when normalize expands the catalog (e.g. adds arrow).
@@ -242,7 +269,7 @@ BarWidget {
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       text: root.label
-      color: root.fg
+      color: root.showIdleGlyph ? Qt.darker(root.fg, 1.45) : root.fg
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
     }
@@ -335,7 +362,7 @@ BarWidget {
     bar: root.bar
     owner: root
     open: root.menuOpen
-    contentWidth: menu.fittedContentWidth(Style.space(320))
+    contentWidth: menu.fittedContentWidth(Style.space(380))
     contentHeight: menu.fittedContentHeight(menuColumn.implicitHeight)
 
     readonly property int metricRowHeight: Style.space(36)
@@ -494,6 +521,120 @@ BarWidget {
         }
 
         property real _pressY: 0
+      }
+
+      Rectangle {
+        width: parent.width
+        height: 1
+        color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18)
+      }
+
+      Item {
+        id: activeOnlyRow
+        width: parent.width
+        height: menu.metricRowHeight
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            // Same width as metric drag handles so On/Off buttons share one column.
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - activeOnlyBtn.implicitWidth - parent.spacing * 2
+              text: "Only while charging / discharging"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            Button {
+              id: activeOnlyBtn
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.activeOnly ? "On" : "Off"
+              foreground: root.fg
+              selected: root.activeOnly
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              onClicked: root.setActiveOnly(!root.activeOnly)
+            }
+          }
+        }
+      }
+
+      Item {
+        id: idleIconRow
+        width: parent.width
+        height: menu.metricRowHeight
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+          opacity: root.activeOnly ? 1 : 0.45
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - idleIconBtn.implicitWidth - parent.spacing * 2
+              text: "Idle battery icon"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            Button {
+              id: idleIconBtn
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.idleIconEnabled ? "On" : "Off"
+              foreground: root.fg
+              selected: root.idleIconEnabled
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              enabled: root.activeOnly
+              onClicked: root.setIdleIcon(!root.idleIconEnabled)
+            }
+          }
+        }
+      }
+
+      Text {
+        text: !root.activeOnly
+          ? "Turn on \"only while charging / discharging\" to use the idle icon."
+          : (root.idleIconEnabled
+            ? "When idle or full, show a battery icon instead of metrics."
+            : "When idle or full, hide the widget completely.")
+        color: Qt.darker(root.fg, 1.4)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        width: parent.width
       }
     }
   }

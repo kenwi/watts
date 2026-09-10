@@ -11,6 +11,7 @@ tooltip with the full detail.
 - Live power draw label (`↑ 12.3 W` charging, `↓ 8.1 W` discharging)
 - Click opens a metrics menu: enable/disable each field and drag to reorder
 - Available bar metrics: Charge arrow, Watts, Battery %, Time remaining
+- Optional: hide the widget when the battery is idle or full
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
 - Tooltip stays open while hovering and updates live with each sample
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
@@ -21,6 +22,14 @@ Left-click the widget to open **Bar metrics**. Each row has:
 
 - **⠿ handle** - drag to change order
 - **On / Off** - include or hide that metric on the bar (at least one must stay on)
+
+Also:
+
+- **Only while charging / discharging** - when on, hide metrics while idle or full
+- **Idle battery icon** - when the option above is on, show a clickable battery
+  icon while idle/full (default on). Turn off to hide the widget completely when
+  idle; re-enable later with `omarchy bar set local.watts idleIcon on` or while
+  charging/discharging.
 
 Examples:
 
@@ -38,13 +47,15 @@ plugin reloads after Omarchy updates):
 ```json
 {
   "id": "local.watts",
-  "metrics": "arrow:on,watts:on,capacity:on,time:off"
+  "metrics": "arrow:on,watts:on,capacity:on,time:off",
+  "activeOnly": "on",
+  "idleIcon": "on"
 }
 ```
 
 Metric ids: `arrow`, `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
 Order in the string is the bar order. The charge arrow joins its neighbor with a
-space (`↓ 8.1 W`); other metrics use ` · `.
+space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly` and `idleIcon` are `on` or `off`.
 
 Older configs without `arrow`, nested-array `metrics`, and the previous `display`
 setting (`watts` / `time` / `full`) still migrate automatically.
