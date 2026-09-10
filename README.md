@@ -9,34 +9,49 @@ tooltip with the full detail.
 ## Features
 
 - Live power draw label (`↑ 12.3 W` charging, `↓ 8.1 W` discharging)
-- Click to cycle bar display modes (persisted in `shell.json`):
-  1. Watts - `↓ 8.1 W`
-  2. Watts + time - `↓ 8.1 W · 1h 12m`
-  3. Watts + charge + time - `↓ 8.1 W · 60% · 1h 12m`
+- Click opens a metrics menu: enable/disable each field and drag to reorder
+- Available bar metrics: Watts, Battery %, Time remaining
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
 - Tooltip stays open while hovering and updates live with each sample
-- Left click also refreshes immediately
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
 
-## Display mode
+## Metrics menu
 
-| Mode | Bar label | Setting value |
-|------|-----------|---------------|
-| Watts | `↓ 8.1 W` | `watts` (default) |
-| Watts + time | `↓ 8.1 W · 1h 12m` | `time` |
-| Watts + % + time | `↓ 8.1 W · 60% · 1h 12m` | `full` |
+Left-click the widget to open **Bar metrics**. Each row has:
 
-Set from the CLI:
+- **⠿ handle** - drag to change order
+- **On / Off** - include or hide that metric on the bar (at least one must stay on)
 
-```bash
-omarchy bar set local.watts display time
-omarchy bar set local.watts display full
-omarchy bar set local.watts display watts
+Examples:
+
+| Configuration | Bar label |
+|---------------|-----------|
+| Watts only | `↓ 8.1 W` |
+| Watts, then % | `↓ 8.1 W · 60%` |
+| %, then watts | `60% · ↓ 8.1 W` |
+| Watts, %, time | `↓ 8.1 W · 60% · 1h 12m` |
+
+Settings are persisted in `shell.json` as an ordered `metrics` list:
+
+```json
+{
+  "id": "local.watts",
+  "metrics": [
+    { "id": "watts", "enabled": true },
+    { "id": "capacity", "enabled": true },
+    { "id": "time", "enabled": false }
+  ]
+}
 ```
 
+Metric ids: `watts`, `capacity`, `time`.
+
+The older `display` values (`watts` / `time` / `full`) still migrate automatically
+if `metrics` is not set yet.
+
 Time is estimated from `energy_now` / `power_now` while discharging, or
-remaining capacity to full while charging. It is omitted when power draw is 0
-or the battery is neither charging nor discharging.
+remaining capacity to full while charging. It is omitted from the bar when
+power draw is 0 or the battery is neither charging nor discharging.
 
 ## Requirements
 
@@ -70,5 +85,6 @@ prefer `omarchy restart shell` after edits so QML definitely reloads.
 | File | Role |
 |------|------|
 | `manifest.json` | Plugin id, bar-widget metadata, entry point |
-| `BarWidget.qml` | Sysfs probe, display modes, live tooltip, settings |
+| `BarWidget.qml` | Sysfs probe, metrics menu, live tooltip, settings |
+| `Model.js` | Metric catalog, normalize/migrate, label formatting |
 | `README.md` | This file |

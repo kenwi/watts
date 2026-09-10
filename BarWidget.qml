@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 BarWidget {
   id: root
@@ -12,17 +13,12 @@ BarWidget {
   property int capacity: -1
   property real watts: 0
   property string timeShort: ""
-  // Own popup: bar.showTooltip() always clears + delays, and the third-party
-  // facade has no way to update text in place.
+  // Own popup tip: bar.showTooltip() always clears + delays, and the
+  // third-party facade has no way to update text in place.
   property bool tipShown: false
+  property bool menuOpen: false
 
-  readonly property var displayModes: ["watts", "time", "full"]
-  // Persisted via shell.json layout entry: omarchy bar set local.watts display time
-  readonly property string displayMode: {
-    var v = String(setting("display", "watts"))
-    return (v === "time" || v === "full") ? v : "watts"
-  }
-
+  readonly property var metrics: Model.normalizeMetrics(setting("metrics", null), setting("display", "watts"))
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
   // Plain unicode arrows keep predictable text metrics in any font.
@@ -34,19 +30,18 @@ BarWidget {
     if (discharging) return timeShort + " remaining"
     return timeShort
   }
-  readonly property string label: {
-    var parts = [root.wattsPart]
-    if (root.displayMode === "full" && root.capacity >= 0)
-      parts.push(root.capacity + "%")
-    if ((root.displayMode === "time" || root.displayMode === "full") && root.timeShort !== "")
-      parts.push(root.timeShort)
-    return parts.join(" · ")
-  }
+  readonly property string label: Model.formatLabel(root.metrics, {
+    wattsPart: root.wattsPart,
+    capacity: root.capacity,
+    timeShort: root.timeShort
+  })
   readonly property string tooltipText: {
     var parts = [root.status, root.capacity + "%", root.watts.toFixed(2) + " W"]
     if (root.timeRemaining !== "") parts.push(root.timeRemaining)
     return parts.join(" • ")
   }
+  readonly property color fg: root.bar ? root.bar.barForeground : Color.foreground
+  readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
   // Toggle with: omarchy bar set local.watts enabled false   (or true)
   readonly property bool widgetEnabled: {
@@ -55,9 +50,67 @@ BarWidget {
   }
 
   visible: capacity >= 0 && !vertical && widgetEnabled
-  implicitWidth: visible ? labelText.implicitWidth + Style.space(8) * 2 : 0
+  implicitWidth: visible ? Math.max(12, labelText.implicitWidth) + Style.space(8) * 2 : 0
   implicitHeight: barSize
-  readonly property bool tooltipHovered: visible && mouseArea.containsMouse
+  // Bar open-panel underline defaults to ~55% of the slot; span the full widget.
+  readonly property real openPanelIndicatorWidth: width
+  readonly property bool tooltipHovered: visible && mouseArea.containsMouse && !root.menuOpen
+
+  function close() {
+    root.menuOpen = false
+  }
+
+  function closeForPopoutSwitch() {
+    root.close()
+  }
+
+  function persistMetrics(nextMetrics) {
+    var entry = { id: root.moduleName }
+    for (var key in root.settings) {
+      if (key === "id" || key === "display") continue
+      entry[key] = root.settings[key]
+    }
+    entry.metrics = nextMetrics
+    root.settings = entry
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
+  function syncMetricsModel() {
+    metricsModel.clear()
+    var list = root.metrics
+    for (var i = 0; i < list.length; i++) {
+      metricsModel.append({
+        metricId: String(list[i].id || ""),
+        metricEnabled: list[i].enabled === true
+      })
+    }
+  }
+
+  function metricsFromModel() {
+    var next = []
+    for (var i = 0; i < metricsModel.count; i++) {
+      var row = metricsModel.get(i)
+      next.push({ id: String(row.metricId || ""), enabled: row.metricEnabled === true })
+    }
+    return next
+  }
+
+  function persistFromModel() {
+    root.persistMetrics(root.metricsFromModel())
+  }
+
+  function toggleMetricAt(index) {
+    if (index < 0 || index >= metricsModel.count) return
+    var row = metricsModel.get(index)
+    var enabledCount = 0
+    for (var i = 0; i < metricsModel.count; i++) {
+      if (metricsModel.get(i).metricEnabled) enabledCount++
+    }
+    if (row.metricEnabled && enabledCount <= 1) return
+    metricsModel.setProperty(index, "metricEnabled", !row.metricEnabled)
+    root.persistFromModel()
+  }
 
   function formatDuration(hours) {
     if (!(hours > 0) || !isFinite(hours)) return ""
@@ -78,20 +131,8 @@ BarWidget {
     return formatDuration(hours)
   }
 
-  function cycleDisplay() {
-    var modes = root.displayModes
-    var idx = modes.indexOf(root.displayMode)
-    var next = modes[(idx < 0 ? 0 : idx + 1) % modes.length]
-    var entry = { id: root.moduleName }
-    for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
-    entry.display = next
-    // Applied locally first so the label changes on the click itself.
-    root.settings = entry
-    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
-      root.bar.shell.updateEntryInline(root.moduleName, entry)
-  }
-
   function armTooltip() {
+    if (root.menuOpen) return
     hideTipTimer.stop()
     if (root.tooltipText === "") return
     if (root.tipShown) return
@@ -109,11 +150,25 @@ BarWidget {
     root.tipShown = false
   }
 
-  onVisibleChanged: if (!visible) root.closeTooltip()
+  function toggleMenu() {
+    root.closeTooltip()
+    root.menuOpen = !root.menuOpen
+    if (root.menuOpen) {
+      root.syncMetricsModel()
+      probe.running = true
+    }
+  }
+
+  onVisibleChanged: {
+    if (!visible) {
+      root.closeTooltip()
+      root.close()
+    }
+  }
   onTooltipTextChanged: {
-    // Keep an open tip alive when text clears briefly; close only on leave.
     if (root.tipShown && root.tooltipText === "") root.tipShown = false
   }
+  onMenuOpenChanged: if (root.menuOpen) root.closeTooltip()
 
   Timer {
     id: showTipTimer
@@ -171,8 +226,8 @@ BarWidget {
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       text: root.label
-      color: root.bar ? root.bar.barForeground : Color.foreground
-      font.family: root.bar ? root.bar.fontFamily : Style.font.family
+      color: root.fg
+      font.family: root.fontFamily
       font.pixelSize: Style.font.body
     }
   }
@@ -184,10 +239,7 @@ BarWidget {
     cursorShape: Qt.PointingHandCursor
 
     onClicked: function(mouse) {
-      if (mouse.button === Qt.LeftButton) {
-        root.cycleDisplay()
-        probe.running = true
-      }
+      if (mouse.button === Qt.LeftButton) root.toggleMenu()
     }
     onEntered: root.armTooltip()
     onExited: root.scheduleHideTooltip()
@@ -195,7 +247,7 @@ BarWidget {
 
   PopupWindow {
     id: tipWindow
-    visible: root.tipShown && root.tooltipText !== ""
+    visible: root.tipShown && root.tooltipText !== "" && !root.menuOpen
     color: "transparent"
     implicitWidth: Math.ceil(tipBubble.implicitWidth)
     implicitHeight: Math.ceil(tipBubble.implicitHeight)
@@ -249,10 +301,183 @@ BarWidget {
         anchors.centerIn: parent
         text: root.tooltipText
         color: Color.tooltip.text
-        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.family: root.fontFamily
         font.pixelSize: Style.font.body
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+      }
+    }
+  }
+
+  ListModel {
+    id: metricsModel
+  }
+
+  PopupCard {
+    id: menu
+    anchorItem: root
+    bar: root.bar
+    owner: root
+    open: root.menuOpen
+    contentWidth: menu.fittedContentWidth(Style.space(320))
+    contentHeight: menu.fittedContentHeight(menuColumn.implicitHeight)
+
+    readonly property int metricRowHeight: Style.space(36)
+
+    Column {
+      id: menuColumn
+      anchors.fill: parent
+      spacing: Style.space(8)
+
+      Text {
+        text: "Bar metrics"
+        color: root.fg
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        font.bold: true
+      }
+
+      Text {
+        text: "Toggle metrics on or off. Drag the handle to change order."
+        color: Qt.darker(root.fg, 1.4)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        width: parent.width
+      }
+
+      Item {
+        id: metricsListHost
+        width: parent.width
+        height: Math.max(menu.metricRowHeight, metricsModel.count * menu.metricRowHeight)
+
+        // Manual drag reorder: DropArea/Drag fires on press and shoved rows
+        // to the middle. Reorder only after a movement threshold, by Y index.
+        property int dragFrom: -1
+        property bool dragging: false
+
+        Column {
+          id: metricsColumn
+          anchors.fill: parent
+          spacing: 0
+
+          Repeater {
+            model: metricsModel
+
+            delegate: Item {
+              id: metricRow
+              required property string metricId
+              required property bool metricEnabled
+              required property int index
+
+              width: metricsColumn.width
+              height: menu.metricRowHeight
+
+              readonly property var def: Model.metricDef(metricId)
+              readonly property bool canDisable: {
+                var n = 0
+                for (var i = 0; i < metricsModel.count; i++) {
+                  if (metricsModel.get(i).metricEnabled) n++
+                }
+                return !(metricEnabled && n <= 1)
+              }
+              readonly property bool held: metricsListHost.dragging && metricsListHost.dragFrom === index
+
+              Rectangle {
+                anchors.fill: parent
+                anchors.margins: Style.space(1)
+                radius: Style.cornerRadius
+                color: metricRow.held ? Style.hoverFillFor(root.fg, root.fg) : "transparent"
+
+                Row {
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(4)
+                  anchors.rightMargin: Style.space(4)
+                  spacing: Style.space(8)
+
+                  Item {
+                    id: dragHandle
+                    width: Style.space(22)
+                    height: parent.height
+
+                    Text {
+                      anchors.centerIn: parent
+                      text: "⠿"
+                      color: Qt.darker(root.fg, metricRow.held ? 1.0 : 1.5)
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      preventStealing: true
+                      cursorShape: metricsListHost.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                      onPressed: function(mouse) {
+                        metricsListHost.dragFrom = metricRow.index
+                        metricsListHost.dragging = false
+                        // Track press in list coordinates so threshold is absolute.
+                        metricsListHost._pressY = mapToItem(metricsListHost, mouse.x, mouse.y).y
+                      }
+
+                      onPositionChanged: function(mouse) {
+                        if (!pressed || metricsListHost.dragFrom < 0) return
+                        var y = mapToItem(metricsListHost, mouse.x, mouse.y).y
+                        if (!metricsListHost.dragging) {
+                          if (Math.abs(y - metricsListHost._pressY) < 6) return
+                          metricsListHost.dragging = true
+                        }
+
+                        var to = Math.floor(y / menu.metricRowHeight)
+                        to = Math.max(0, Math.min(metricsModel.count - 1, to))
+                        if (to === metricsListHost.dragFrom) return
+                        metricsModel.move(metricsListHost.dragFrom, to, 1)
+                        metricsListHost.dragFrom = to
+                      }
+
+                      onReleased: function(mouse) {
+                        if (metricsListHost.dragging)
+                          root.persistFromModel()
+                        metricsListHost.dragging = false
+                        metricsListHost.dragFrom = -1
+                      }
+
+                      onCanceled: {
+                        metricsListHost.dragging = false
+                        metricsListHost.dragFrom = -1
+                      }
+                    }
+                  }
+
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - dragHandle.width - toggleBtn.width - parent.spacing * 2
+                    text: metricRow.def ? metricRow.def.label : metricRow.metricId
+                    color: root.fg
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    elide: Text.ElideRight
+                  }
+
+                  Button {
+                    id: toggleBtn
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: metricEnabled ? "On" : "Off"
+                    foreground: root.fg
+                    selected: metricEnabled
+                    horizontalPadding: 8
+                    verticalPadding: 3
+                    fontSize: Style.font.bodySmall
+                    enabled: metricRow.canDisable || !metricEnabled
+                    onClicked: root.toggleMetricAt(metricRow.index)
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        property real _pressY: 0
       }
     }
   }

@@ -4,7 +4,7 @@
   "name": "Power draw",
   "version": "1.0.0",
   "author": "kenwi",
-  "description": "Live battery power draw in watts, sampled from sysfs every 5s",
+  "description": "Live battery power draw with configurable bar metrics and tooltip",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Power draw (W)",
-    "description": "Live battery power draw in watts with charge state icon and tooltip",
+    "description": "Configurable watts / battery % / time remaining on the bar, with live tooltip",
     "category": "Power",
     "allowMultiple": false
   }
