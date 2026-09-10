@@ -70,10 +70,22 @@ BarWidget {
       if (key === "id" || key === "display") continue
       entry[key] = root.settings[key]
     }
-    entry.metrics = nextMetrics
+    // Plain string survives QML plugin reload; nested arrays may not.
+    entry.metrics = Model.serializeMetrics(nextMetrics)
     root.settings = entry
     if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
       root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
+  // One-shot migration: rewrite nested-array metrics to the string form.
+  property bool metricsMigrated: false
+  function ensureMetricsPersisted() {
+    if (root.metricsMigrated) return
+    root.metricsMigrated = true
+    var raw = setting("metrics", null)
+    if (raw === null || raw === undefined) return
+    if (typeof raw === "string" && raw.indexOf(":") !== -1) return
+    root.persistMetrics(root.metrics)
   }
 
   function syncMetricsModel() {
@@ -165,6 +177,8 @@ BarWidget {
       root.close()
     }
   }
+  onBarChanged: if (root.bar) Qt.callLater(root.ensureMetricsPersisted)
+  Component.onCompleted: Qt.callLater(root.ensureMetricsPersisted)
   onTooltipTextChanged: {
     if (root.tipShown && root.tooltipText === "") root.tipShown = false
   }

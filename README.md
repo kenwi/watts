@@ -31,23 +31,21 @@ Examples:
 | %, then watts | `60% · ↓ 8.1 W` |
 | Watts, %, time | `↓ 8.1 W · 60% · 1h 12m` |
 
-Settings are persisted in `shell.json` as an ordered `metrics` list:
+Settings are persisted in `shell.json` as a plain string (so they survive
+plugin reloads after Omarchy updates):
 
 ```json
 {
   "id": "local.watts",
-  "metrics": [
-    { "id": "watts", "enabled": true },
-    { "id": "capacity", "enabled": true },
-    { "id": "time", "enabled": false }
-  ]
+  "metrics": "watts:on,capacity:on,time:off"
 }
 ```
 
-Metric ids: `watts`, `capacity`, `time`.
+Metric ids: `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
+Order in the string is the bar order.
 
-The older `display` values (`watts` / `time` / `full`) still migrate automatically
-if `metrics` is not set yet.
+Older nested-array `metrics` values and the previous `display` setting
+(`watts` / `time` / `full`) still migrate automatically.
 
 Time is estimated from `energy_now` / `power_now` while discharging, or
 remaining capacity to full while charging. It is omitted from the bar when

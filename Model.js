@@ -1,4 +1,9 @@
 // Metric catalog and persistence helpers for local.watts.
+//
+// Metrics are persisted as a plain string in shell.json so they survive
+// plugin hot-reload. Nested JSON arrays can round-trip through QML as
+// array-like objects that fail Array.isArray(), which previously made the
+// widget fall back to watts-only after an Omarchy update/rescan.
 
 var METRIC_DEFS = [
   { id: "watts", label: "Watts", description: "Power draw with charge arrow" },
@@ -44,36 +49,128 @@ function metricsFromDisplay(display) {
 function cloneMetrics(list) {
   var out = []
   for (var i = 0; i < list.length; i++) {
-    out.push({ id: String(list[i].id || ""), enabled: list[i].enabled === true })
+    out.push({ id: String(list[i].id || ""), enabled: !!list[i].enabled })
   }
   return out
 }
 
+function isEnabledFlag(value) {
+  return value === true || value === 1 || value === "1"
+    || value === "true" || value === "on" || value === "yes"
+}
+
+// QML sometimes hands JSON arrays through as array-like objects, not real Arrays.
+function asList(value) {
+  if (value === undefined || value === null) return null
+  if (Array.isArray(value)) return value
+  if (typeof value === "object" && typeof value.length === "number" && value.length >= 0) {
+    var out = []
+    for (var i = 0; i < value.length; i++) out.push(value[i])
+    return out
+  }
+  return null
+}
+
+// Stable shell.json form: "watts:on,capacity:on,time:off"
+function serializeMetrics(metrics) {
+  var parts = []
+  var list = asList(metrics) || []
+  for (var i = 0; i < list.length; i++) {
+    var id = String(list[i].id || "")
+    if (!metricDef(id)) continue
+    parts.push(id + ":" + (list[i].enabled ? "on" : "off"))
+  }
+  return parts.join(",")
+}
+
+function parseMetricsString(raw) {
+  var text = String(raw || "").trim()
+  if (!text) return null
+  // Legacy: allow a bare comma list of enabled ids ("watts,capacity").
+  if (text.indexOf(":") === -1 && text.charAt(0) !== "[") {
+    var ids = text.split(",")
+    var legacy = []
+    var legacySeen = ({})
+    for (var i = 0; i < ids.length; i++) {
+      var id = String(ids[i] || "").trim()
+      if (!metricDef(id) || legacySeen[id]) continue
+      legacySeen[id] = true
+      legacy.push({ id: id, enabled: true })
+    }
+    return finalizeMetrics(legacy)
+  }
+
+  var parts = text.split(",")
+  var rows = []
+  var seen = ({})
+  for (var p = 0; p < parts.length; p++) {
+    var piece = String(parts[p] || "").trim()
+    if (!piece) continue
+    var bits = piece.split(":")
+    var metricId = String(bits[0] || "").trim()
+    var flag = String(bits[1] || "on").trim().toLowerCase()
+    if (!metricDef(metricId) || seen[metricId]) continue
+    seen[metricId] = true
+    rows.push({
+      id: metricId,
+      enabled: flag !== "off" && flag !== "0" && flag !== "false" && flag !== "no"
+    })
+  }
+  return finalizeMetrics(rows)
+}
+
+function finalizeMetrics(rows) {
+  var seen = ({})
+  var out = []
+  for (var i = 0; i < rows.length; i++) {
+    var id = String(rows[i].id || "")
+    if (!metricDef(id) || seen[id]) continue
+    seen[id] = true
+    out.push({ id: id, enabled: !!rows[i].enabled })
+  }
+  for (var d = 0; d < METRIC_DEFS.length; d++) {
+    var defId = METRIC_DEFS[d].id
+    if (!seen[defId]) out.push({ id: defId, enabled: false })
+  }
+  if (!out.some(function(m) { return m.enabled })) return null
+  return out
+}
+
+function metricsFromArray(raw) {
+  var list = asList(raw)
+  if (!list || list.length === 0) return null
+  var rows = []
+  for (var i = 0; i < list.length; i++) {
+    var row = list[i]
+    if (typeof row === "string") {
+      rows.push({ id: row, enabled: true })
+      continue
+    }
+    if (!row || typeof row !== "object") continue
+    rows.push({
+      id: String(row.id || ""),
+      enabled: isEnabledFlag(row.enabled) || isEnabledFlag(row.on)
+    })
+  }
+  return finalizeMetrics(rows)
+}
+
 // Normalize any shell.json value into a full ordered [{id, enabled}] list.
 function normalizeMetrics(raw, displayFallback) {
-  if (Array.isArray(raw) && raw.length > 0) {
-    var seen = ({})
-    var out = []
-    for (var i = 0; i < raw.length; i++) {
-      var row = raw[i]
-      var id = ""
-      var enabled = false
-      if (typeof row === "string") {
-        id = row
-        enabled = true
-      } else if (row && typeof row === "object") {
-        id = String(row.id || "")
-        enabled = row.enabled === true || row.enabled === "true" || row.on === true
-      }
-      if (!metricDef(id) || seen[id]) continue
-      seen[id] = true
-      out.push({ id: id, enabled: enabled })
+  if (typeof raw === "string") {
+    // Nested JSON array accidentally stringified, or our on/off format.
+    var trimmed = raw.trim()
+    if (trimmed.charAt(0) === "[") {
+      try {
+        var parsed = metricsFromArray(JSON.parse(trimmed))
+        if (parsed) return parsed
+      } catch (e) {}
     }
-    for (var d = 0; d < METRIC_DEFS.length; d++) {
-      var defId = METRIC_DEFS[d].id
-      if (!seen[defId]) out.push({ id: defId, enabled: false })
-    }
-    if (out.some(function(m) { return m.enabled })) return out
+    var fromString = parseMetricsString(raw)
+    if (fromString) return fromString
+  } else {
+    var fromArray = metricsFromArray(raw)
+    if (fromArray) return fromArray
   }
   return metricsFromDisplay(displayFallback)
 }
