@@ -2,8 +2,8 @@
 
 Omarchy bar widget that shows live battery power draw in watts.
 
-Samples `/sys/class/power_supply/BAT0` every 5 seconds and shows charge state,
-watts, optional capacity and time remaining on the bar, plus a live hover
+Reads `/sys/class/power_supply/BAT0` on a configurable interval and shows charge
+state, watts, optional capacity and time remaining on the bar, plus a live hover
 tooltip with the full detail.
 
 ## Features
@@ -11,10 +11,29 @@ tooltip with the full detail.
 - Live power draw label (`↑ 12.3 W` charging, `↓ 8.1 W` discharging)
 - Click opens a metrics menu: enable/disable each field and drag to reorder
 - Available bar metrics: Charge arrow, Watts, Battery %, Time remaining
-- Optional: hide the widget when the battery is idle or full
+- Optional: hide metrics when idle/full, with optional idle battery icon
+- Configurable update interval (default 5s)
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
 - Tooltip stays open while hovering and updates live with each sample
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
+
+## Sampling and update rate
+
+Two clocks are involved:
+
+1. **Plugin sample interval** (`intervalSec`, default `5`) - how often this widget
+   re-reads sysfs. Change it in the metrics menu or with
+   `omarchy bar set local.watts intervalSec 10`. Range is 1-300 seconds. Left click
+   also triggers an immediate refresh.
+2. **Kernel / ACPI battery driver** - how often `/sys/class/power_supply/BAT0`
+   values such as `power_now` and `energy_now` actually change. There is no fixed
+   poll file for BAT0; updates depend on the hardware and driver. Values may move
+   within a second under changing load, or stay flat when draw is steady.
+
+The bar never refreshes faster than `intervalSec`, and it cannot show a change
+the kernel has not written to sysfs yet. Time remaining is estimated from the
+latest sample (`energy_now` / `power_now` while discharging, or remaining
+capacity to full while charging), so it inherits the same limits.
 
 ## Metrics menu
 
@@ -25,6 +44,7 @@ Left-click the widget to open **Bar metrics**. Each row has:
 
 Also:
 
+- **Update interval (seconds)** - how often sysfs is sampled (1-300, default 5)
 - **Only while charging / discharging** - when on, hide metrics while idle or full
 - **Idle battery icon** - when the option above is on, show a clickable battery
   icon while idle/full (default on). Turn off to hide the widget completely when
@@ -49,20 +69,21 @@ plugin reloads after Omarchy updates):
   "id": "local.watts",
   "metrics": "arrow:on,watts:on,capacity:on,time:off",
   "activeOnly": "on",
-  "idleIcon": "on"
+  "idleIcon": "on",
+  "intervalSec": 5
 }
 ```
 
 Metric ids: `arrow`, `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
 Order in the string is the bar order. The charge arrow joins its neighbor with a
-space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly` and `idleIcon` are `on` or `off`.
+space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly` and `idleIcon` are `on`
+or `off`. `intervalSec` is 1-300.
 
 Older configs without `arrow`, nested-array `metrics`, and the previous `display`
 setting (`watts` / `time` / `full`) still migrate automatically.
 
-Time is estimated from `energy_now` / `power_now` while discharging, or
-remaining capacity to full while charging. It is omitted from the bar when
-power draw is 0 or the battery is neither charging nor discharging.
+Time remaining is omitted from the bar when power draw is 0 or the battery is
+neither charging nor discharging.
 
 ## Requirements
 

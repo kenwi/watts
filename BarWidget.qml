@@ -27,6 +27,12 @@ BarWidget {
     if (v === false || v === "false" || v === "off" || v === 0 || v === "0") return false
     return true
   }
+  // Probe cadence in seconds (1-300). Plain number in shell.json.
+  readonly property int intervalSec: {
+    var n = Math.floor(Number(setting("intervalSec", 5)))
+    if (!isFinite(n)) return 5
+    return Math.max(1, Math.min(300, n))
+  }
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
   readonly property bool powerActive: charging || discharging
@@ -103,6 +109,12 @@ BarWidget {
 
   function setIdleIcon(enabled) {
     root.persistSettings({ idleIcon: enabled ? "on" : "off" })
+  }
+
+  function setIntervalSec(sec) {
+    var n = Math.floor(Number(sec))
+    if (!isFinite(n)) n = 5
+    root.persistSettings({ intervalSec: Math.max(1, Math.min(300, n)) })
   }
 
   // Rewrite shell.json when normalize expands the catalog (e.g. adds arrow).
@@ -232,7 +244,7 @@ BarWidget {
   }
 
   Timer {
-    interval: 5000
+    interval: root.intervalSec * 1000
     running: root.widgetEnabled
     triggeredOnStart: true
     repeat: true
@@ -527,6 +539,55 @@ BarWidget {
         width: parent.width
         height: 1
         color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18)
+      }
+
+      Item {
+        id: intervalRow
+        width: parent.width
+        height: Math.max(menu.metricRowHeight, intervalField.implicitHeight + Style.space(2))
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - intervalField.implicitWidth - parent.spacing * 2
+              text: "Update interval (seconds)"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            NumberField {
+              id: intervalField
+              anchors.verticalCenter: parent.verticalCenter
+              label: ""
+              value: root.intervalSec
+              from: 1
+              to: 300
+              stepSize: 1
+              fieldWidth: Style.space(56)
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              onModified: function(v) { root.setIntervalSec(v) }
+            }
+          }
+        }
       }
 
       Item {
