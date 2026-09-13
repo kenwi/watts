@@ -36,6 +36,28 @@ BarWidget {
   // Horizontal padding around the bar label (px). Default matches Style.space(8).
   readonly property int padLeft: root.readPadPx(setting("padLeft", null))
   readonly property int padRight: root.readPadPx(setting("padRight", null))
+  // Live end-threshold from sysfs (-1 until first successful probe).
+  property int sysChargeLimit: -1
+  property string chargeLimitError: ""
+  property bool chargeLimitBusy: false
+  // Preferred limit % when limiter is on. Unset → use current sysfs value.
+  readonly property int chargeLimitPct: {
+    var raw = setting("chargeLimitPct", null)
+    if (raw === null || raw === undefined || raw === "") {
+      if (root.sysChargeLimit > 0) return Math.max(50, Math.min(100, root.sysChargeLimit))
+      return 80
+    }
+    var n = Math.floor(Number(raw))
+    if (!isFinite(n)) return 80
+    return Math.max(50, Math.min(100, n))
+  }
+  // Unset → on when the kernel already has a limit below 100%.
+  readonly property bool chargeLimitEnabled: {
+    var raw = setting("chargeLimit", null)
+    if (raw === null || raw === undefined || raw === "")
+      return root.sysChargeLimit > 0 && root.sysChargeLimit < 100
+    return Model.isEnabledFlag(raw)
+  }
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
   readonly property bool powerActive: charging || discharging
@@ -62,6 +84,8 @@ BarWidget {
   readonly property string tooltipText: {
     var parts = [root.status, root.capacity + "%", root.watts.toFixed(2) + " W"]
     if (root.timeRemaining !== "") parts.push(root.timeRemaining)
+    if (root.sysChargeLimit > 0 && root.sysChargeLimit < 100)
+      parts.push("limit " + root.sysChargeLimit + "%")
     return parts.join(" • ")
   }
   readonly property color fg: root.bar ? root.bar.barForeground : Color.foreground
@@ -133,6 +157,60 @@ BarWidget {
 
   function setPadRight(px) {
     root.persistSettings({ padRight: root.readPadPx(px) })
+  }
+
+  function chargeLimitScriptPath() {
+    var url = String(Qt.resolvedUrl("set-charge-limit.sh"))
+    if (url.indexOf("file://") === 0) {
+      var path = url.substring(7)
+      // file:///home/... → /home/...
+      if (path.charAt(0) !== "/") path = "/" + path
+      try { return decodeURIComponent(path) } catch (e) { return path }
+    }
+    return url
+  }
+
+  function desiredChargeLimitPct() {
+    return root.chargeLimitEnabled ? root.chargeLimitPct : 100
+  }
+
+  function scheduleApplyChargeLimit() {
+    chargeLimitApplyTimer.restart()
+  }
+
+  function applyChargeLimitNow() {
+    if (chargeLimitWriter.running) {
+      root.scheduleApplyChargeLimit()
+      return
+    }
+    var pct = root.desiredChargeLimitPct()
+    if (root.sysChargeLimit === pct) {
+      root.chargeLimitError = ""
+      return
+    }
+    root.chargeLimitBusy = true
+    root.chargeLimitError = ""
+    chargeLimitWriter.command = ["pkexec", "/bin/sh", root.chargeLimitScriptPath(), String(pct)]
+    chargeLimitWriter.running = true
+  }
+
+  function setChargeLimitEnabled(enabled) {
+    root.persistSettings({
+      chargeLimit: enabled ? "on" : "off",
+      chargeLimitPct: root.chargeLimitPct
+    })
+    root.scheduleApplyChargeLimit()
+  }
+
+  function setChargeLimitPct(pct) {
+    var n = Math.floor(Number(pct))
+    if (!isFinite(n)) n = root.chargeLimitPct
+    n = Math.max(50, Math.min(100, n))
+    root.persistSettings({
+      chargeLimit: root.chargeLimitEnabled ? "on" : "off",
+      chargeLimitPct: n
+    })
+    if (root.chargeLimitEnabled) root.scheduleApplyChargeLimit()
   }
 
   // Rewrite shell.json when normalize expands the catalog (e.g. adds arrow).
@@ -269,9 +347,15 @@ BarWidget {
     onTriggered: probe.running = true
   }
 
+  Timer {
+    id: chargeLimitApplyTimer
+    interval: 700
+    onTriggered: root.applyChargeLimitNow()
+  }
+
   Process {
     id: probe
-    command: ["sh", "-c", "cat /sys/class/power_supply/BAT0/status /sys/class/power_supply/BAT0/capacity /sys/class/power_supply/BAT0/power_now /sys/class/power_supply/BAT0/energy_now /sys/class/power_supply/BAT0/energy_full 2>/dev/null"]
+    command: ["sh", "-c", "cat /sys/class/power_supply/BAT0/status /sys/class/power_supply/BAT0/capacity /sys/class/power_supply/BAT0/power_now /sys/class/power_supply/BAT0/energy_now /sys/class/power_supply/BAT0/energy_full /sys/class/power_supply/BAT0/charge_control_end_threshold 2>/dev/null"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -285,7 +369,38 @@ BarWidget {
         root.capacity = parseInt(lines[1])
         root.watts = powerNow / 1000000
         root.timeShort = root.estimateTimeShort(statusText, energyNow, energyFull, powerNow)
+        if (lines.length >= 6 && lines[5] !== "") {
+          var lim = parseInt(lines[5])
+          if (isFinite(lim) && lim > 0) root.sysChargeLimit = lim
+        }
       }
+    }
+  }
+
+  Process {
+    id: chargeLimitWriter
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var out = String(text || "").trim()
+        var n = parseInt(out)
+        if (isFinite(n) && n > 0) root.sysChargeLimit = n
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var err = String(text || "").trim()
+        if (err !== "") root.chargeLimitError = err
+      }
+    }
+    onExited: function(exitCode) {
+      root.chargeLimitBusy = false
+      if (exitCode !== 0 && root.chargeLimitError === "")
+        root.chargeLimitError = exitCode === 126 || exitCode === 127
+          ? "Could not run charge-limit helper"
+          : "Failed to set charge limit (need auth?)"
+      probe.running = true
     }
   }
 
@@ -704,6 +819,135 @@ BarWidget {
             }
           }
         }
+      }
+
+      Rectangle {
+        width: parent.width
+        height: 1
+        color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.18)
+      }
+
+      Item {
+        id: chargeLimitRow
+        width: parent.width
+        height: menu.metricRowHeight
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+          opacity: root.sysChargeLimit > 0 ? 1 : 0.45
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - chargeLimitBtn.implicitWidth - parent.spacing * 2
+              text: "Charge limiter"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            Button {
+              id: chargeLimitBtn
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.chargeLimitEnabled ? "On" : "Off"
+              foreground: root.fg
+              selected: root.chargeLimitEnabled
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              enabled: root.sysChargeLimit > 0 && !root.chargeLimitBusy
+              onClicked: root.setChargeLimitEnabled(!root.chargeLimitEnabled)
+            }
+          }
+        }
+      }
+
+      Item {
+        id: chargeLimitPctRow
+        width: parent.width
+        height: Math.max(menu.metricRowHeight, chargeLimitPctField.implicitHeight + Style.space(2))
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+          opacity: root.sysChargeLimit > 0 && root.chargeLimitEnabled ? 1 : 0.45
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - chargeLimitPctField.implicitWidth - parent.spacing * 2
+              text: "Charge limit (%)"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            NumberField {
+              id: chargeLimitPctField
+              anchors.verticalCenter: parent.verticalCenter
+              label: ""
+              value: root.chargeLimitPct
+              from: 50
+              to: 100
+              stepSize: 1
+              fieldWidth: Style.space(56)
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              enabled: root.sysChargeLimit > 0 && root.chargeLimitEnabled && !root.chargeLimitBusy
+              onModified: function(v) { root.setChargeLimitPct(v) }
+            }
+          }
+        }
+      }
+
+      Text {
+        visible: root.sysChargeLimit > 0
+        text: root.chargeLimitBusy
+          ? "Applying charge limit (auth may be required)…"
+          : (root.chargeLimitError !== ""
+            ? root.chargeLimitError
+            : ("Kernel limit now " + root.sysChargeLimit + "%."))
+        color: root.chargeLimitError !== "" ? Color.urgent : Qt.darker(root.fg, 1.4)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        width: parent.width
+      }
+
+      Text {
+        visible: root.sysChargeLimit <= 0
+        text: "Charge limit sysfs not available on this battery."
+        color: Qt.darker(root.fg, 1.4)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        width: parent.width
       }
 
       Item {

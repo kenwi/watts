@@ -4,7 +4,7 @@
   "name": "Power draw",
   "version": "1.0.0",
   "author": "kenwi",
-  "description": "Live battery power draw with configurable bar metrics and tooltip",
+  "description": "Live battery power draw with configurable bar metrics, charge limiter, and tooltip",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Power draw (W)",
-    "description": "Configurable watts / battery % / time remaining on the bar, with live tooltip",
+    "description": "Configurable watts / battery % / time remaining, charge limit, live tooltip",
     "category": "Power",
     "allowMultiple": false
   }

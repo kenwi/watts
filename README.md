@@ -14,6 +14,7 @@ tooltip with the full detail.
 - Optional: hide metrics when idle/full, with optional idle battery icon
 - Configurable update interval (default 5s)
 - Configurable left/right bar padding (px) to nudge the label on the bar
+- Charge limiter: toggle and set end-threshold % (defaults to the current kernel value)
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
 - Tooltip stays open while hovering and updates live with each sample
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
@@ -48,6 +49,12 @@ Also:
 - **Update interval (seconds)** - how often sysfs is sampled (1-300, default 5)
 - **Left / right padding (px)** - empty space around the label on the bar (0-400;
   default matches theme spacing, usually ~8)
+- **Charge limiter** - cap charging at a percentage (writes
+  `charge_control_end_threshold`). Defaults to whatever the kernel already has
+  (for example 80% from a boot service). Off sets the limit to 100%. Changing the
+  value prompts for elevation via `pkexec` and updates
+  `/etc/systemd/system/battery-charge-limit.service` so it survives reboot.
+- **Charge limit (%)** - target when the limiter is on (50-100)
 - **Only while charging / discharging** - when on, hide metrics while idle or full
 - **Idle battery icon** - when the option above is on, show a clickable battery
   icon while idle/full (default on). Turn off to hide the widget completely when
@@ -75,7 +82,9 @@ plugin reloads after Omarchy updates):
   "idleIcon": "on",
   "intervalSec": 5,
   "padLeft": 8,
-  "padRight": 8
+  "padRight": 8,
+  "chargeLimit": "on",
+  "chargeLimitPct": 80
 }
 ```
 
@@ -83,7 +92,9 @@ Metric ids: `arrow`, `watts`, `capacity`, `time`. Each is followed by `:on` or `
 Order in the string is the bar order. The charge arrow joins its neighbor with a
 space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly` and `idleIcon` are `on`
 or `off`. `intervalSec` is 1-300. `padLeft` / `padRight` are pixels (0-400).
-Unset padding keeps the theme default (`Style.space(8)`).
+Unset padding keeps the theme default (`Style.space(8)`). Unset `chargeLimit` /
+`chargeLimitPct` follow the live sysfs end-threshold (limiter on when it is
+below 100%).
 
 Older configs without `arrow`, nested-array `metrics`, and the previous `display`
 setting (`watts` / `time` / `full`) still migrate automatically.
@@ -95,6 +106,7 @@ neither charging nor discharging.
 
 - Laptop battery exposed as `BAT0` under `/sys/class/power_supply/`
 - Sysfs files: `status`, `capacity`, `power_now`, `energy_now`, `energy_full`
+- Optional charge limiter: `charge_control_end_threshold` (write needs `pkexec`)
 - Horizontal bar only (hidden on vertical bars and when no battery is found)
 
 ## Install
@@ -125,4 +137,5 @@ prefer `omarchy restart shell` after edits so QML definitely reloads.
 | `manifest.json` | Plugin id, bar-widget metadata, entry point |
 | `BarWidget.qml` | Sysfs probe, metrics menu, live tooltip, settings |
 | `Model.js` | Metric catalog, normalize/migrate, label formatting |
+| `set-charge-limit.sh` | Root helper to set end-threshold + systemd unit |
 | `README.md` | This file |
