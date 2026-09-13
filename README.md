@@ -6,6 +6,14 @@ Reads `/sys/class/power_supply/BAT0` on a configurable interval and shows charge
 state, watts, optional capacity and time remaining on the bar, plus a live hover
 tooltip with the full detail.
 
+![Bar metrics menu](screenshots/menu.png)
+
+*Metrics menu - toggle and reorder bar fields, padding, sample interval, and charge limiter.*
+
+![Hover tooltip](screenshots/on-hover.png)
+
+*Hover tooltip - live status, capacity, watts, time estimate, and charge limit.*
+
 ## Features
 
 - Live power draw label (`↑ 12.3 W` charging, `↓ 8.1 W` discharging)
@@ -138,4 +146,5 @@ prefer `omarchy restart shell` after edits so QML definitely reloads.
 | `BarWidget.qml` | Sysfs probe, metrics menu, live tooltip, settings |
 | `Model.js` | Metric catalog, normalize/migrate, label formatting |
 | `set-charge-limit.sh` | Root helper to set end-threshold + systemd unit |
+| `screenshots/` | Menu and hover tooltip images for this README |
 | `README.md` | This file |
