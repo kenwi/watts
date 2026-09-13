@@ -13,6 +13,7 @@ tooltip with the full detail.
 - Available bar metrics: Charge arrow, Watts, Battery %, Time remaining
 - Optional: hide metrics when idle/full, with optional idle battery icon
 - Configurable update interval (default 5s)
+- Configurable left/right bar padding (px) to nudge the label on the bar
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
 - Tooltip stays open while hovering and updates live with each sample
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
@@ -45,6 +46,8 @@ Left-click the widget to open **Bar metrics**. Each row has:
 Also:
 
 - **Update interval (seconds)** - how often sysfs is sampled (1-300, default 5)
+- **Left / right padding (px)** - empty space around the label on the bar (0-400;
+  default matches theme spacing, usually ~8)
 - **Only while charging / discharging** - when on, hide metrics while idle or full
 - **Idle battery icon** - when the option above is on, show a clickable battery
   icon while idle/full (default on). Turn off to hide the widget completely when
@@ -70,14 +73,17 @@ plugin reloads after Omarchy updates):
   "metrics": "arrow:on,watts:on,capacity:on,time:off",
   "activeOnly": "on",
   "idleIcon": "on",
-  "intervalSec": 5
+  "intervalSec": 5,
+  "padLeft": 8,
+  "padRight": 8
 }
 ```
 
 Metric ids: `arrow`, `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
 Order in the string is the bar order. The charge arrow joins its neighbor with a
 space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly` and `idleIcon` are `on`
-or `off`. `intervalSec` is 1-300.
+or `off`. `intervalSec` is 1-300. `padLeft` / `padRight` are pixels (0-400).
+Unset padding keeps the theme default (`Style.space(8)`).
 
 Older configs without `arrow`, nested-array `metrics`, and the previous `display`
 setting (`watts` / `time` / `full`) still migrate automatically.

@@ -33,6 +33,9 @@ BarWidget {
     if (!isFinite(n)) return 5
     return Math.max(1, Math.min(300, n))
   }
+  // Horizontal padding around the bar label (px). Default matches Style.space(8).
+  readonly property int padLeft: root.readPadPx(setting("padLeft", null))
+  readonly property int padRight: root.readPadPx(setting("padRight", null))
   readonly property bool charging: status === "Charging"
   readonly property bool discharging: status === "Discharging"
   readonly property bool powerActive: charging || discharging
@@ -72,11 +75,18 @@ BarWidget {
 
   visible: capacity >= 0 && !vertical && widgetEnabled
     && (!activeOnly || powerActive || idleIconEnabled || menuOpen)
-  implicitWidth: visible ? Math.max(12, labelText.implicitWidth) + Style.space(8) * 2 : 0
+  implicitWidth: visible ? Math.max(12, labelText.implicitWidth) + padLeft + padRight : 0
   implicitHeight: barSize
   // Bar open-panel underline defaults to ~55% of the slot; span the full widget.
   readonly property real openPanelIndicatorWidth: width
   readonly property bool tooltipHovered: visible && mouseArea.containsMouse && !root.menuOpen
+
+  function readPadPx(raw) {
+    if (raw === null || raw === undefined || raw === "") return Style.space(8)
+    var n = Math.floor(Number(raw))
+    if (!isFinite(n)) return Style.space(8)
+    return Math.max(0, Math.min(400, n))
+  }
 
   function close() {
     root.menuOpen = false
@@ -115,6 +125,14 @@ BarWidget {
     var n = Math.floor(Number(sec))
     if (!isFinite(n)) n = 5
     root.persistSettings({ intervalSec: Math.max(1, Math.min(300, n)) })
+  }
+
+  function setPadLeft(px) {
+    root.persistSettings({ padLeft: root.readPadPx(px) })
+  }
+
+  function setPadRight(px) {
+    root.persistSettings({ padRight: root.readPadPx(px) })
   }
 
   // Rewrite shell.json when normalize expands the catalog (e.g. adds arrow).
@@ -273,8 +291,8 @@ BarWidget {
 
   Item {
     anchors.fill: parent
-    anchors.leftMargin: Style.space(8)
-    anchors.rightMargin: Style.space(8)
+    anchors.leftMargin: root.padLeft
+    anchors.rightMargin: root.padRight
 
     Text {
       id: labelText
@@ -585,6 +603,104 @@ BarWidget {
               fontFamily: root.fontFamily
               fontSize: Style.font.bodySmall
               onModified: function(v) { root.setIntervalSec(v) }
+            }
+          }
+        }
+      }
+
+      Item {
+        id: padLeftRow
+        width: parent.width
+        height: Math.max(menu.metricRowHeight, padLeftField.implicitHeight + Style.space(2))
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - padLeftField.implicitWidth - parent.spacing * 2
+              text: "Left padding (px)"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            NumberField {
+              id: padLeftField
+              anchors.verticalCenter: parent.verticalCenter
+              label: ""
+              value: root.padLeft
+              from: 0
+              to: 400
+              stepSize: 1
+              fieldWidth: Style.space(56)
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              onModified: function(v) { root.setPadLeft(v) }
+            }
+          }
+        }
+      }
+
+      Item {
+        id: padRightRow
+        width: parent.width
+        height: Math.max(menu.metricRowHeight, padRightField.implicitHeight + Style.space(2))
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - padRightField.implicitWidth - parent.spacing * 2
+              text: "Right padding (px)"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            NumberField {
+              id: padRightField
+              anchors.verticalCenter: parent.verticalCenter
+              label: ""
+              value: root.padRight
+              from: 0
+              to: 400
+              stepSize: 1
+              fieldWidth: Style.space(56)
+              foreground: root.fg
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              onModified: function(v) { root.setPadRight(v) }
             }
           }
         }
