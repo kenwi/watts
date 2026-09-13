@@ -927,12 +927,10 @@ BarWidget {
       }
 
       Text {
-        visible: root.sysChargeLimit > 0
+        visible: root.sysChargeLimit > 0 && (root.chargeLimitBusy || root.chargeLimitError !== "")
         text: root.chargeLimitBusy
           ? "Applying charge limit (auth may be required)…"
-          : (root.chargeLimitError !== ""
-            ? root.chargeLimitError
-            : ("Kernel limit now " + root.sysChargeLimit + "%."))
+          : root.chargeLimitError
         color: root.chargeLimitError !== "" ? Color.urgent : Qt.darker(root.fg, 1.4)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
