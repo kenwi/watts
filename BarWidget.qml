@@ -27,6 +27,12 @@ BarWidget {
     if (v === false || v === "false" || v === "off" || v === 0 || v === "0") return false
     return true
   }
+  // Live hover tooltip (default on).
+  readonly property bool hoverTooltipEnabled: {
+    var v = setting("hoverTooltip", "on")
+    if (v === false || v === "false" || v === "off" || v === 0 || v === "0") return false
+    return true
+  }
   // Probe cadence in seconds (1-300). Plain number in shell.json.
   readonly property int intervalSec: {
     var n = Math.floor(Number(setting("intervalSec", 5)))
@@ -103,7 +109,8 @@ BarWidget {
   implicitHeight: barSize
   // Bar open-panel underline defaults to ~55% of the slot; span the full widget.
   readonly property real openPanelIndicatorWidth: width
-  readonly property bool tooltipHovered: visible && mouseArea.containsMouse && !root.menuOpen
+  readonly property bool tooltipHovered: visible && root.hoverTooltipEnabled
+    && mouseArea.containsMouse && !root.menuOpen
 
   function readPadPx(raw) {
     if (raw === null || raw === undefined || raw === "") return Style.space(8)
@@ -143,6 +150,11 @@ BarWidget {
 
   function setIdleIcon(enabled) {
     root.persistSettings({ idleIcon: enabled ? "on" : "off" })
+  }
+
+  function setHoverTooltip(enabled) {
+    root.persistSettings({ hoverTooltip: enabled ? "on" : "off" })
+    if (!enabled) root.closeTooltip()
   }
 
   function setIntervalSec(sec) {
@@ -281,6 +293,7 @@ BarWidget {
   }
 
   function armTooltip() {
+    if (!root.hoverTooltipEnabled) return
     if (root.menuOpen) return
     hideTipTimer.stop()
     if (root.tooltipText === "") return
@@ -435,7 +448,7 @@ BarWidget {
 
   PopupWindow {
     id: tipWindow
-    visible: root.tipShown && root.tooltipText !== "" && !root.menuOpen
+    visible: root.hoverTooltipEnabled && root.tipShown && root.tooltipText !== "" && !root.menuOpen
     color: "transparent"
     implicitWidth: Math.ceil(tipBubble.implicitWidth)
     implicitHeight: Math.ceil(tipBubble.implicitHeight)
@@ -946,6 +959,52 @@ BarWidget {
         font.pixelSize: Style.font.caption
         wrapMode: Text.WordWrap
         width: parent.width
+      }
+
+      Item {
+        id: hoverTooltipRow
+        width: parent.width
+        height: menu.metricRowHeight
+
+        Rectangle {
+          anchors.fill: parent
+          anchors.margins: Style.space(1)
+          color: "transparent"
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(4)
+            anchors.rightMargin: Style.space(4)
+            spacing: Style.space(8)
+
+            Item {
+              width: Style.space(22)
+              height: parent.height
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - Style.space(22) - hoverTooltipBtn.implicitWidth - parent.spacing * 2
+              text: "Hover tooltip"
+              color: root.fg
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            Button {
+              id: hoverTooltipBtn
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.hoverTooltipEnabled ? "On" : "Off"
+              foreground: root.fg
+              selected: root.hoverTooltipEnabled
+              horizontalPadding: 8
+              verticalPadding: 3
+              fontSize: Style.font.bodySmall
+              onClicked: root.setHoverTooltip(!root.hoverTooltipEnabled)
+            }
+          }
+        }
       }
 
       Item {

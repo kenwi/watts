@@ -24,7 +24,7 @@ tooltip with the full detail.
 - Configurable left/right bar padding (px) to nudge the label on the bar
 - Charge limiter: toggle and set end-threshold % (defaults to the current kernel value)
 - Hover tooltip with status, capacity %, watts, and time remaining / until full
-- Tooltip stays open while hovering and updates live with each sample
+- Tooltip stays open while hovering and updates live with each sample (can be disabled)
 - Toggle with `omarchy bar set local.watts enabled false` (or `true`)
 
 ## Sampling and update rate
@@ -63,6 +63,7 @@ Also:
   value prompts for elevation via `pkexec` and updates
   `/etc/systemd/system/battery-charge-limit.service` so it survives reboot.
 - **Charge limit (%)** - target when the limiter is on (50-100)
+- **Hover tooltip** - show the live detail popup on hover (default on)
 - **Only while charging / discharging** - when on, hide metrics while idle or full
 - **Idle battery icon** - when the option above is on, show a clickable battery
   icon while idle/full (default on). Turn off to hide the widget completely when
@@ -92,17 +93,18 @@ plugin reloads after Omarchy updates):
   "padLeft": 8,
   "padRight": 8,
   "chargeLimit": "on",
-  "chargeLimitPct": 80
+  "chargeLimitPct": 80,
+  "hoverTooltip": "on"
 }
 ```
 
 Metric ids: `arrow`, `watts`, `capacity`, `time`. Each is followed by `:on` or `:off`.
 Order in the string is the bar order. The charge arrow joins its neighbor with a
-space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly` and `idleIcon` are `on`
-or `off`. `intervalSec` is 1-300. `padLeft` / `padRight` are pixels (0-400).
-Unset padding keeps the theme default (`Style.space(8)`). Unset `chargeLimit` /
-`chargeLimitPct` follow the live sysfs end-threshold (limiter on when it is
-below 100%).
+space (`↓ 8.1 W`); other metrics use ` · `. `activeOnly`, `idleIcon`, and
+`hoverTooltip` are `on` or `off`. `intervalSec` is 1-300. `padLeft` / `padRight`
+are pixels (0-400). Unset padding keeps the theme default (`Style.space(8)`).
+Unset `chargeLimit` / `chargeLimitPct` follow the live sysfs end-threshold
+(limiter on when it is below 100%).
 
 Older configs without `arrow`, nested-array `metrics`, and the previous `display`
 setting (`watts` / `time` / `full`) still migrate automatically.
