@@ -1,5 +1,5 @@
 #!/bin/sh
-# Apply a BAT0 charge-end threshold and persist it via systemd.
+# Apply a BAT0 charge-end threshold (ThinkPad EC persists this across reboot).
 # Usage: set-charge-limit.sh <percent>
 #   percent: 1-100 (100 = charge to full)
 set -eu
@@ -42,24 +42,5 @@ printf '%s\n' "$pct" > "$end"
 if [ -e "$stop" ]; then
   printf '%s\n' "$pct" > "$stop" 2>/dev/null || true
 fi
-
-unit="/etc/systemd/system/battery-charge-limit.service"
-cat > "$unit" <<EOF
-[Unit]
-Description=Limit battery charge to ${pct} percent (longevity)
-After=multi-user.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'echo ${pct} > /sys/class/power_supply/BAT0/charge_control_end_threshold'
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable battery-charge-limit.service >/dev/null
-systemctl restart battery-charge-limit.service >/dev/null
 
 printf '%s\n' "$pct"

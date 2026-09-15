@@ -59,9 +59,9 @@ Also:
   default matches theme spacing, usually ~8)
 - **Charge limiter** - cap charging at a percentage (writes
   `charge_control_end_threshold`). Defaults to whatever the kernel already has
-  (for example 80% from a boot service). Off sets the limit to 100%. Changing the
-  value prompts for elevation via `pkexec` and updates
-  `/etc/systemd/system/battery-charge-limit.service` so it survives reboot.
+  (for example 80%). Off sets the limit to 100%. Changing the value prompts for
+  elevation via `pkexec`. On ThinkPads the EC stores the threshold, so it
+  survives reboot without a systemd helper.
 - **Charge limit (%)** - target when the limiter is on (50-100)
 - **Hover tooltip** - show the live detail popup on hover (default on)
 - **Only while charging / discharging** - when on, hide metrics while idle or full
@@ -147,6 +147,6 @@ prefer `omarchy restart shell` after edits so QML definitely reloads.
 | `manifest.json` | Plugin id, bar-widget metadata, entry point |
 | `BarWidget.qml` | Sysfs probe, metrics menu, live tooltip, settings |
 | `Model.js` | Metric catalog, normalize/migrate, label formatting |
-| `set-charge-limit.sh` | Root helper to set end-threshold + systemd unit |
+| `set-charge-limit.sh` | Root helper to write BAT0 end-threshold via sysfs |
 | `screenshots/` | Menu and hover tooltip images for this README |
 | `README.md` | This file |
