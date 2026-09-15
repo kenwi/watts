@@ -531,7 +531,7 @@ BarWidget {
       spacing: Style.space(8)
 
       Text {
-        text: "Bar metrics"
+        text: "Battery metrics"
         color: root.fg
         font.family: root.fontFamily
         font.pixelSize: Style.font.body

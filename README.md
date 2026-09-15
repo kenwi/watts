@@ -6,7 +6,7 @@ Reads `/sys/class/power_supply/BAT0` on a configurable interval and shows charge
 state, watts, optional capacity and time remaining on the bar, plus a live hover
 tooltip with the full detail.
 
-![Bar metrics menu](screenshots/menu.png)
+![Battery metrics menu](screenshots/menu.png)
 
 *Metrics menu - toggle and reorder bar fields, padding, sample interval, and charge limiter.*
 
@@ -47,7 +47,7 @@ capacity to full while charging), so it inherits the same limits.
 
 ## Metrics menu
 
-Left-click the widget to open **Bar metrics**. Each row has:
+Left-click the widget to open **Battery metrics**. Each row has:
 
 - **⠿ handle** - drag to change order
 - **On / Off** - include or hide that metric on the bar (at least one must stay on)
