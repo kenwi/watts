@@ -124,15 +124,16 @@ neither charging nor discharging.
 Symlink or copy into the user plugin directory, then enable and place on the bar:
 
 ```bash
-ln -s ~/Work/omarchy-plugins/local.watts ~/.config/omarchy/plugins/local.watts
+git clone https://github.com/kenwi/watts.git ~/Work/watts
+ln -s ~/Work/watts ~/.config/omarchy/plugins/local.watts
 omarchy plugin enable local.watts
 omarchy bar put local.watts --section left
 ```
 
-From git (if published as a standalone plugin repo):
+Or:
 
 ```bash
-omarchy plugin add <git-url> --enable
+omarchy plugin add https://github.com/kenwi/watts.git --enable
 omarchy bar put local.watts
 ```
 
